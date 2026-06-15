@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package drop.common;
+
+// ============================================================
+// 通用消息结构 —— 所有 .proto 共享的基础类型
+// ============================================================
+
+// 进程资源统计（读自 /proc/[pid]/stat + /proc/[pid]/io）
+message PidStats {//体检单 Agent每次心跳都会带上自己的体检单刚给sever,这个语法是一个结构体或者说是容器
+  uint64 timestamp_ms  = 1;   // 采集时间戳 (ms)
+  double cpu_percent   = 2;   // CPU 使用率 (%)
+  uint64 rss_kb        = 3;   // 物理内存占用 (KB)
+  uint64 read_kb_per_s = 4;   // 磁盘读速率 (KB/s)
+  uint64 write_kb_per_s= 5;   // 磁盘写速率 (KB/s)
+  int32  pid           = 6;   // 进程 PID
+  string comm          = 7;   // 进程名 (/proc/[pid]/comm)
+}
+
+// 文件描述（内联小文件用；大文件走 COS/S3 路径）
+message File {
+  string filename    = 1;
+  bytes  content     = 2;
+  uint64 size_bytes  = 3;
+}
+
+// 对象存储临时凭证
+message CosConfig {
+  string endpoint     = 1;   // S3 endpoint
+  string access_key   = 2;
+  string secret_key   = 3;
+  string bucket       = 4;
+  string region       = 5;
+  string token        = 6;   // 临时 token（可空）
+  uint64 expire_sec   = 7;   // 过期时间 (秒)
+}

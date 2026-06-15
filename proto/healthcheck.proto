@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package drop.healthcheck;
+
+import "common.proto";//引用其他proto文件
+
+// ============================================================
+// HealthCheck 服务 —— Agent 心跳机制
+//
+// 调用模式：Agent → Server（每 5 秒一次）
+// Server 在响应中捎带待执行的任务，避免 Agent 轮询
+// ============================================================
+
+service HealthCheck {//函数接口
+  rpc Do(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+message HealthCheckRequest {
+  string hostname                = 1;   // Agent 主机名
+  string ip_addr                 = 2;   // Agent IP 地址
+  string uid                     = 3;   // Agent 唯一标识
+  string agent_version           = 4;   // Agent 版本号
+  drop.common.PidStats self_pstats       = 5;   // Agent 自身资源占用
+  drop.common.PidStats children_pstats   = 6;   // Agent 子进程聚合资源
+}
+
+message HealthCheckResponse {
+  enum ServingStatus {
+    UNKNOWN     = 0;
+    SERVING     = 1;   // 正常服务
+    NOT_SERVING = 2;   // 过载/下线
+  }
+  ServingStatus status        = 1;
+  bool    has_pending_task    = 2;   // 是否有待执行的任务
+  drop.hotmethod.TaskDesc task_desc = 3;   // 捎带下发的任务（如有）
+}

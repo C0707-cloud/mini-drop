@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package drop.init;
+
+import "common.proto";
+
+// ============================================================
+// Init 服务 —— Agent 启动时的注册与配置拉取
+//
+// Agent 启动时：
+//   1. RegisterAgent → 向 Server 注册自己
+//   2. FetchConfig  → 拉取配置（COS 凭证、Server 列表等）
+// ============================================================
+
+service Init {
+  rpc RegisterAgent(RegisterAgentRequest) returns (RegisterAgentResponse);
+  rpc FetchConfig(FetchConfigRequest) returns (FetchConfigResponse);
+}
+
+message RegisterAgentRequest {
+  string hostname      = 1;
+  string ip_addr       = 2;
+  string uid           = 3;
+  string agent_version = 4;
+  repeated string supported_profilers = 5;   // 支持的采集器列表
+}
+
+message RegisterAgentResponse {
+  bool   success = 1;
+  string error   = 2;
+  string agent_id= 3;   // Server 分配的 agent_id
+}
+
+message FetchConfigRequest {
+  string agent_id = 1;
+}
+
+message FetchConfigResponse {
+  drop.common.CosConfig cos_config = 1;   // 对象存储凭证
+  repeated string server_ips        = 2;   // 备用 Server 列表（故障转移）
+  uint32 heartbeat_interval_sec     = 3;   // 心跳间隔
+  uint32 task_timeout_sec           = 4;   // 任务默认超时
+}

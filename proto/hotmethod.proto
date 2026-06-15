@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package drop.hotmethod;
+
+import "common.proto";
+import "google/protobuf/empty.proto";
+
+// ============================================================
+// Hotmethod 服务 —— 核心采集任务下发与结果回报
+//
+// 这是整个系统最核心的协议：
+//   Collect()     → Server 主动推送任务给 Agent（可选，通常用心跳捎带）
+//   NotifyResult()→ Agent 采集完成后回报结果给 Server
+// ============================================================
+
+service Hotmethod {
+  // Server → Agent：直接下发任务（用于紧急采集，不用等心跳轮询）
+  rpc Collect(TaskDesc) returns (google.protobuf.Empty);
+
+  // Agent → Server：上报采集结果
+  rpc NotifyResult(TaskResult) returns (google.protobuf.Empty);
+}
+
+// 任务类型枚举
+enum TaskType {
+  TASK_GENERIC    = 0;   // 通用 CPU 采样
+  TASK_JAVA       = 1;   // Java 应用（async-profiler）
+  TASK_TRACING    = 2;   // 追踪（eBPF/ftrace）
+  TASK_MEMCHECK   = 4;   // 内存泄漏检查
+  TASK_JAVA_HEAP  = 6;   // Java 堆 dump
+}
+
+// 采集器类型枚举
+enum ProfilerType {
+  PROFILER_PERF            = 0;   // Linux perf
+  PROFILER_ASYNC_PROFILER  = 1;   // Java async-profiler
+  PROFILER_PPROF           = 2;   // Go pprof
+  PROFILER_EBPF            = 3;   // eBPF 探针
+  PROFILER_PROC_STATS      = 4;   // /proc 资源监控
+}
+
+// 采集参数（映射到 perf record 等命令的参数）
+message RecordArgv {
+  uint32 hz          = 1;   // 采样频率 (Hz)，如 99
+  uint64 duration_sec= 2;   // 采集时长 (秒)
+  int32  pid         = 3;   // 目标进程 PID
+  string callgraph   = 4;   // 调用栈展开方式: fp / dwarf / lbr
+  bool   subprocess  = 5;   // 是否采集子进程
+  string event       = 6;   // perf event: cpu-cycles / cache-misses / ...
+}
+
+// 任务描述 —— Server 下发给 Agent 的完整任务信息
+message TaskDesc {
+  string task_id           = 1;   // 全局唯一任务 ID
+  TaskType task_type       = 2;   // 任务类型
+  ProfilerType profiler_type = 3; // 采集器类型
+  RecordArgv sample_argv   = 4;   // 采集参数
+  string container_name    = 5;   // 容器/Pod 名（可空）
+  uint32 container_type    = 6;   // 容器运行时类型
+  uint32 timeout_sec       = 7;   // 超时时间 (秒)
+  drop.common.CosConfig cos_config = 8;   // 临时对象存储凭证
+  string script_content    = 9;   // 脚本内容（仅 ScriptExec 任务）
+}
+
+// 任务结果 —— Agent 采集完成后上报
+message TaskResult {
+  string task_id            = 1;   // 对应任务 ID
+  string error_message      = 2;   // 错误信息（空 = 成功）
+  drop.common.File file     = 3;   // 内联小文件（<1MB）
+  string cos_key            = 4;   // 大文件的 S3 key
+  repeated drop.common.PidStats self_pstats     = 5;   // 采集期间自身资源
+  repeated drop.common.PidStats children_pstats = 6;   // 子进程资源
+}
