@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>任务详情 · Mini-Drop</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #333; }
+  .header { background: #1a1a2e; color: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
+  .header a { color: #e94560; text-decoration: none; font-size: 14px; }
+  .container { max-width: 1000px; margin: 24px auto; padding: 0 24px; }
+  .card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 24px; }
+  .card h2 { font-size: 16px; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #eee; }
+  .info-row { display: flex; margin-bottom: 8px; font-size: 14px; }
+  .info-label { width: 120px; color: #999; flex-shrink: 0; }
+  .info-value { font-weight: 500; }
+  .status-DONE  { color: #389e0d; font-weight: 700; }
+  .status-FAILED{ color: #cf1322; font-weight: 700; }
+  .status-RUNNING{ color: #096dd9; font-weight: 700; }
+  .flame-container { width: 100%; overflow-x: auto; border: 1px solid #eee; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <a href="/index.html">← 返回首页</a>
+  <span>任务详情</span>
+</div>
+
+<div class="container">
+  <div class="card">
+    <h2>基本信息</h2>
+    <div id="taskInfo">加载中...</div>
+  </div>
+
+  <div class="card">
+    <h2>火焰图</h2>
+    <div id="flameSection" class="flame-container">
+      <p style="color:#999;padding:40px;text-align:center">火焰图将在分析完成后显示</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>优化建议</h2>
+    <div id="suggestions" style="padding: 8px 0;">
+      <p style="color:#999;">等待分析结果...</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>审计日志</h2>
+    <div id="auditLog" style="padding: 8px 0; font-size:13px;">
+      <p style="color:#999;">加载中...</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = "http://localhost:5000";
+const params = new URLSearchParams(window.location.search);
+const tid    = params.get("tid");
+
+async function api(method, path) {
+  const r = await fetch(API + path, { method });
+  return r.json();
+}
+
+async function loadTask() {
+  if (!tid) {
+    document.getElementById("taskInfo").innerHTML = "<p style='color:#cf1322'>缺少 tid 参数</p>";
+    return;
+  }
+
+  try {
+    const r = await api("GET", "/api/v1/tasks/" + tid);
+    if (r.code !== 0) {
+      document.getElementById("taskInfo").innerHTML = "<p style='color:#cf1322'>任务不存在</p>";
+      return;
+    }
+    const t = r.data;
+    document.getElementById("taskInfo").innerHTML = `
+      <div class="info-row"><span class="info-label">任务ID</span><span class="info-value"><code>${t.task_id}</code></span></div>
+      <div class="info-row"><span class="info-label">名称</span><span class="info-value">${t.name}</span></div>
+      <div class="info-row"><span class="info-label">目标</span><span class="info-value">${t.target_ip} : PID=${t.pid}</span></div>
+      <div class="info-row"><span class="info-label">采样率</span><span class="info-value">${t.hz} Hz × ${t.duration}s</span></div>
+      <div class="info-row"><span class="info-label">状态</span><span class="info-value status-${t.status}">${t.status}</span></div>
+      <div class="info-row"><span class="info-label">状态说明</span><span class="info-value">${t.status_reason || '-'}</span></div>
+      <div class="info-row"><span class="info-label">创建时间</span><span class="info-value">${t.created_at || '-'}</span></div>
+    `;
+
+    // 加载火焰图
+    if (t.output_file) {
+      document.getElementById("flameSection").innerHTML =
+        `<object data="${API}/../flamegraph.svg" type="image/svg+xml" width="100%" height="500" style="border:none;">
+          <p>浏览器不支持 SVG</p>
+        </object>`;
+    } else if (t.status === "DONE" || t.status === "FAILED") {
+      document.getElementById("flameSection").innerHTML =
+        `<p style="color:#999;padding:40px;text-align:center">${t.status === "FAILED" ? "任务失败，无火焰图" : "分析进行中..."}</p>`;
+    }
+  } catch(e) {
+    document.getElementById("taskInfo").innerHTML = "<p style='color:#cf1322'>加载失败</p>";
+  }
+
+  // 加载审计日志
+  try {
+    const r = await api("GET", "/api/v1/audit");
+    const filtered = (r.data || []).filter(a => a.task_id === tid);
+    if (filtered.length === 0) {
+      document.getElementById("auditLog").innerHTML = "<p style='color:#999;'>暂无日志</p>";
+    } else {
+      document.getElementById("auditLog").innerHTML = filtered.map(a =>
+        `<div style="margin-bottom:4px;">
+          <span style="color:#999;">${a.created_at || ''}</span>
+          [<strong>${a.event}</strong>]
+          ${a.detail || ''}
+        </div>`
+      ).join("");
+    }
+  } catch(e) {}
+
+  // 加载建议
+  document.getElementById("suggestions").innerHTML =
+    "<p style='color:#999;'>等待 Analyzer 分析...</p>";
+}
+
+loadTask();
+setInterval(loadTask, 5000);
+</script>
+
+</body>
+</html>

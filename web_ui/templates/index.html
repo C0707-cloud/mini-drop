@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mini-Drop · 性能分析平台</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #333; }
+  .header { background: #1a1a2e; color: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
+  .header h1 { font-size: 20px; font-weight: 600; }
+  .header .badge { background: #e94560; border-radius: 4px; padding: 2px 8px; font-size: 12px; }
+  .container { max-width: 1200px; margin: 24px auto; padding: 0 24px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 24px; }
+  .card h2 { font-size: 16px; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #eee; }
+  .form-group { margin-bottom: 12px; }
+  .form-group label { display: block; font-size: 13px; color: #666; margin-bottom: 4px; }
+  .form-group input { width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 14px; }
+  .form-row { display: flex; gap: 12px; }
+  .form-row .form-group { flex: 1; }
+  .btn { padding: 8px 20px; border: none; border-radius: 4px; font-size: 14px; cursor: pointer; }
+  .btn-primary { background: #e94560; color: #fff; }
+  .btn-primary:hover { background: #d63850; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #f0f0f0; }
+  th { background: #fafafa; color: #666; font-weight: 600; }
+  .status { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+  .status-PENDING  { background: #fff7e6; color: #d46b08; }
+  .status-RUNNING  { background: #e6f7ff; color: #096dd9; }
+  .status-UPLOADING{ background: #f9f0ff; color: #722ed1; }
+  .status-DONE     { background: #f6ffed; color: #389e0d; }
+  .status-FAILED   { background: #fff2f0; color: #cf1322; }
+  .agent-ok { color: #389e0d; font-weight: 600; }
+  .agent-off { color: #cf1322; }
+  .section-title { font-size: 18px; margin-bottom: 16px; }
+  .refresh-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  #msg { padding: 8px 12px; border-radius: 4px; margin-top: 12px; display: none; }
+  #msg.success { background: #f6ffed; color: #389e0d; display: block; }
+  #msg.error  { background: #fff2f0; color: #cf1322; display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Mini-Drop</h1>
+  <span class="badge">Dev</span>
+  <span style="margin-left:auto;font-size:13px;opacity:.7">一站式性能分析平台</span>
+</div>
+
+<div class="container">
+  <div class="section-title">Agent 列表</div>
+  <div id="agentList" style="margin-bottom:24px;">加载中...</div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>新建采集任务</h2>
+      <form id="taskForm">
+        <div class="form-group">
+          <label>任务名称</label>
+          <input type="text" id="taskName" value="CPU 采样" required>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>目标 IP</label>
+            <input type="text" id="targetIP" value="127.0.0.1" required>
+          </div>
+          <div class="form-group">
+            <label>目标 PID</label>
+            <input type="number" id="targetPID" value="1" required>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>采样频率 (Hz)</label>
+            <input type="number" id="sampleHz" value="99">
+          </div>
+          <div class="form-group">
+            <label>采集时长 (秒)</label>
+            <input type="number" id="duration" value="10">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary">创建任务</button>
+        <div id="msg"></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="refresh-bar">
+        <h2>任务列表</h2>
+        <button class="btn btn-primary" onclick="refreshAll()" style="font-size:12px;padding:4px 12px;">刷新</button>
+      </div>
+      <table>
+        <thead>
+          <tr><th>任务ID</th><th>名称</th><th>目标</th><th>状态</th><th>时间</th><th>操作</th></tr>
+        </thead>
+        <tbody id="taskTableBody">
+          <tr><td colspan="6" style="text-align:center;color:#999;">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = "http://localhost:5000";
+
+async function api(method, path, body) {
+  const opts = { method, headers: { "Content-Type": "application/json" } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(API + path, opts);
+  return r.json();
+}
+
+async function refreshAgents() {
+  try {
+    const r = await api("GET", "/api/v1/agents");
+    const agents = r.data || [];
+    if (agents.length === 0) {
+      document.getElementById("agentList").innerHTML =
+        "<p style='color:#999;font-size:14px'>暂无 Agent 连接</p>";
+      return;
+    }
+    document.getElementById("agentList").innerHTML = agents.map(a =>
+      `<div style="display:inline-block;background:#fff;border-radius:8px;padding:12px 16px;margin:0 8px 8px 0;box-shadow:0 1px 3px rgba(0,0,0,.1);font-size:13px">
+        <div style="font-weight:600">${a.hostname || a.ip_addr}</div>
+        <div style="color:#999">${a.ip_addr}</div>
+        <div>CPU: ${(a.cpu_percent||0).toFixed(1)}% | RSS: ${(a.rss_kb||0)}KB</div>
+        <div class="${a.is_online ? 'agent-ok' : 'agent-off'}">${a.is_online ? '● 在线' : '○ 离线'}</div>
+      </div>`
+    ).join("");
+  } catch(e) {
+    document.getElementById("agentList").innerHTML = "<p style='color:#cf1322'>加载失败</p>";
+  }
+}
+
+async function refreshTasks() {
+  try {
+    const r = await api("GET", "/api/v1/tasks");
+    const tasks = r.data || [];
+    document.getElementById("taskTableBody").innerHTML = tasks.map(t =>
+      `<tr>
+        <td><code>${t.task_id}</code></td>
+        <td>${t.name}</td>
+        <td>${t.target_ip}:${t.pid}</td>
+        <td><span class="status status-${t.status}">${t.status}</span></td>
+        <td style="color:#999;font-size:12px">${t.created_at || ''}</td>
+        <td><a href="/task_detail.html?tid=${t.task_id}" style="color:#e94560">查看</a></td>
+      </tr>`
+    ).join("");
+  } catch(e) {
+    document.getElementById("taskTableBody").innerHTML =
+      "<tr><td colspan='6' style='color:#cf1322'>加载失败</td></tr>";
+  }
+}
+
+function refreshAll() { refreshAgents(); refreshTasks(); }
+
+document.getElementById("taskForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const msg = document.getElementById("msg");
+  msg.className = "";
+  msg.style.display = "none";
+  try {
+    const r = await api("POST", "/api/v1/tasks", {
+      name:      document.getElementById("taskName").value,
+      target_ip: document.getElementById("targetIP").value,
+      pid:       parseInt(document.getElementById("targetPID").value),
+      hz:        parseInt(document.getElementById("sampleHz").value),
+      duration:  parseInt(document.getElementById("duration").value),
+    });
+    if (r.code === 0) {
+      msg.className = "success";
+      msg.innerHTML = `任务创建成功：<code>${r.data.task_id}</code>`;
+      refreshAll();
+    } else {
+      msg.className = "error";
+      msg.textContent = "创建失败";
+    }
+  } catch(ex) {
+    msg.className = "error";
+    msg.textContent = "网络错误";
+  }
+});
+
+refreshAll();
+setInterval(refreshAll, 5000);
+</script>
+
+</body>
+</html>
