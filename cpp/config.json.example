@@ -1,0 +1,9 @@
+{
+  "server_ips": ["127.0.0.1:50051"],
+  "agent_id": "demo-agent-01",
+  "hostname": "",
+  "heartbeat_interval_sec": 5,
+  "task_timeout_sec": 60,
+  "data_dir": "/tmp/drop-agent",
+  "log_level": "info"
+}
