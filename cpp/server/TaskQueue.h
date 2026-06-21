@@ -25,19 +25,16 @@ public:
     TaskQueue(const TaskQueue&)            = delete;
     TaskQueue& operator=(const TaskQueue&) = delete;
 
-    // PushBack — 普通任务追加到队列尾部
     void PushBack(const std::string& ip, TaskT task) {
         std::lock_guard<std::mutex> lock(mutex_);
         queues_[ip].push_back(std::move(task));
     }
 
-    // PushFront — 紧急任务插队到队列头部
     void PushFront(const std::string& ip, TaskT task) {
         std::lock_guard<std::mutex> lock(mutex_);
         queues_[ip].push_front(std::move(task));
     }
 
-    // TryPop — 非阻塞取任务。有则返回，无则返回 nullopt
     std::optional<TaskT> TryPop(const std::string& ip) {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = queues_.find(ip);
@@ -49,7 +46,6 @@ public:
         return task;
     }
 
-    // PendingCount — 某个 IP 的待执行任务数
     size_t PendingCount(const std::string& ip) {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = queues_.find(ip);
@@ -57,13 +53,10 @@ public:
         return it->second.size();
     }
 
-    // TotalPending — 所有 IP 的待执行任务总数
     size_t TotalPending() {
         std::lock_guard<std::mutex> lock(mutex_);
         size_t total = 0;
-        for (const auto& [ip, q] : queues_) {
-            total += q.size();
-        }
+        for (const auto& [ip, q] : queues_) total += q.size();
         return total;
     }
 
