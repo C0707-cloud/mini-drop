@@ -1,0 +1,68 @@
+# ============================================================
+# Mini-Drop docker-compose.yml
+#
+# 一键启动: docker compose up
+#
+# 服务说明:
+#   drop_server:  C++ 调度核心 (gRPC :50051)
+#   drop_agent:   C++ 采集探针 (需要 privileged + host PID)
+#   apiserver:    Python Flask (HTTP :5000)
+#   analyzer:     一次性分析 Job（按需启动）
+# ============================================================
+
+version: "3.8"
+
+services:
+  # ---- C++ Server ----
+  drop_server:
+    build: .
+    image: mini-drop:latest
+    container_name: mini-drop-server
+    command: /app/drop_server
+    ports:
+      - "50051:50051"
+    networks:
+      - drop-net
+
+  # ---- C++ Agent ----
+  drop_agent:
+    build: .
+    image: mini-drop:latest
+    container_name: mini-drop-agent
+    command: /app/drop_agent -c /app/config.json
+    network_mode: host
+    privileged: true
+    pid: host
+    cap_add:
+      - SYS_ADMIN
+      - SYS_PTRACE
+    depends_on:
+      - drop_server
+
+  # ---- Python API Server ----
+  apiserver:
+    build: .
+    image: mini-drop:latest
+    container_name: mini-drop-apiserver
+    command: python3 /app/apiserver/app.py
+    ports:
+      - "5000:5000"
+    networks:
+      - drop-net
+    depends_on:
+      - drop_server
+
+  # ---- Analyzer（一次性 Job） ----
+  analyzer:
+    build: .
+    image: mini-drop:latest
+    container_name: mini-drop-analyzer
+    entrypoint: ["python3", "/app/analyzer/analyzer.py"]
+    networks:
+      - drop-net
+    profiles:
+      - analysis
+
+networks:
+  drop-net:
+    driver: bridge

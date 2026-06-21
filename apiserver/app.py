@@ -126,8 +126,7 @@ def create_task():
     write_audit(tid, "PENDING", f"创建任务 {data.get('name', 'CPU采样')}")
 
     # TODO Day5 联调：调 gRPC ControlService.CreateTask()
-    # 暂时直接模拟状态流转（等联调时替换）
-    change_task_status(tid, "RUNNING", "Agent 已领取")
+    # 保持 PENDING 状态，由 Agent 心跳领取后变为 RUNNING
     print(f"[API] 创建任务 {tid} → {data.get('target_ip', '127.0.0.1')}")
 
     return jsonify({"code": 0, "data": {"task_id": tid}}), 200
@@ -157,7 +156,20 @@ def get_task(task_id):
     row = db.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
     if not row:
         return jsonify({"code": 404, "msg": "任务不存在"}), 404
-    return jsonify({"code": 0, "data": dict(row)}), 200
+
+    # 模拟状态流转（无 Agent 时的自动推进）
+    task = dict(row)
+    if task["status"] == "PENDING":
+        change_task_status(task_id, "RUNNING", "Agent 已领取")
+        task["status"] = "RUNNING"
+        task["status_reason"] = "Agent 已领取"
+    elif task["status"] == "RUNNING":
+        change_task_status(task_id, "DONE", "采集完成")
+        task["status"] = "DONE"
+        task["status_reason"] = "采集完成"
+        task["output_file"] = "/tmp/demo_flamegraph.svg"
+
+    return jsonify({"code": 0, "data": task}), 200
 
 # ============================================================
 # 路由 4：Agent 列表  GET /api/v1/agents
